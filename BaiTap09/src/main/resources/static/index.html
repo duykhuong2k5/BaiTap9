@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Quản lý Sản phẩm - GraphQL Demo</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #222; color: #f0f0f0; margin: 0; padding: 30px; }
+        h1 { color: #00b894; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: #333; }
+        th, td { border: 1px solid #444; padding: 8px 12px; text-align: left; }
+        th { background: #00b894; color: #fff; }
+        tr:nth-child(even) { background: #2d2d2d; }
+        input, button { margin: 4px 2px; padding: 6px 10px; border-radius: 3px; border: none; }
+        input { width: 140px; }
+        button { background: #00b894; color: #fff; cursor: pointer; }
+        button:hover { background: #098c6e; }
+        .form-section { margin-bottom: 18px; }
+        #status { margin-bottom: 15px; color: #fdcb6e; }
+    </style>
+</head>
+<body>
+    <h1>Quản lý Sản phẩm</h1>
+    <div id="status"></div>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Tên sản phẩm</th>
+                <th>Giá (USD)</th>
+                <th>Người đăng</th>
+                <th>Thao tác</th>
+            </tr>
+        </thead>
+        <tbody id="productTable"></tbody>
+    </table>
+
+    <div class="form-section">
+        <h3>Thêm sản phẩm mới</h3>
+        <input id="title" placeholder="Tên sản phẩm">
+        <input id="price" placeholder="Giá">
+        <button onclick="addProduct()">Thêm</button>
+    </div>
+
+    <div class="form-section">
+        <h3>Cập nhật sản phẩm</h3>
+        <input id="updateId" placeholder="ID sản phẩm">
+        <input id="newTitle" placeholder="Tên mới">
+        <input id="newPrice" placeholder="Giá mới">
+        <button onclick="updateProduct()">Cập nhật</button>
+    </div>
+
+    <script>
+        async function loadProducts() {
+            setStatus("Đang tải danh sách sản phẩm...");
+            const query = `query { productsByPriceAsc { id title price user { fullname } } }`;
+            try {
+                const res = await fetch("/graphql", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query })
+                });
+                const data = await res.json();
+                if (data.errors) {
+                    setStatus("Lỗi: " + data.errors[0].message);
+                    return;
+                }
+                const rows = data.data.productsByPriceAsc.map(p => `
+                    <tr>
+                        <td>${p.id}</td>
+                        <td>${p.title}</td>
+                        <td>${p.price}</td>
+                        <td>${p.user?.fullname || "Không rõ"}</td>
+                        <td>
+                            <button onclick="deleteProduct(${p.id})">Xóa</button>
+                        </td>
+                    </tr>
+                `).join("");
+                document.getElementById("productTable").innerHTML = rows;
+                setStatus("Đã tải xong.");
+            } catch (e) {
+                setStatus("Lỗi kết nối server.");
+            }
+        }
+
+        async function addProduct() {
+            const title = document.getElementById("title").value;
+            const price = parseFloat(document.getElementById("price").value);
+            if (!title || isNaN(price)) {
+                setStatus("Vui lòng nhập tên và giá hợp lệ.");
+                return;
+            }
+            setStatus("Đang thêm sản phẩm...");
+            const query = `mutation($input: ProductInput!) {
+                createProduct(input:$input) { id title price }
+            }`;
+            const variables = {
+                input: { title: title, price: price, quantity: 1, desc: "new product", userId: "1" }
+            };
+            const res = await fetch("/graphql", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query, variables })
+            });
+            const data = await res.json();
+            if (data.errors) {
+                setStatus("Lỗi: " + data.errors[0].message);
+            } else {
+                setStatus("Đã thêm sản phẩm.");
+                document.getElementById("title").value = "";
+                document.getElementById("price").value = "";
+                loadProducts();
+            }
+        }
+
+        async function updateProduct() {
+            const id = document.getElementById("updateId").value;
+            const title = document.getElementById("newTitle").value;
+            const price = parseFloat(document.getElementById("newPrice").value);
+            if (!id || (!title && isNaN(price))) {
+                setStatus("Vui lòng nhập ID và ít nhất một trường cập nhật.");
+                return;
+            }
+            setStatus("Đang cập nhật...");
+            const query = `mutation($id: ID!, $input: ProductInput!) {
+                updateProduct(id:$id, input:$input) { id title price }
+            }`;
+            const variables = { id: id, input: { title: title, price: price } };
+            const res = await fetch("/graphql", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query, variables })
+            });
+            const data = await res.json();
+            if (data.errors) {
+                setStatus("Lỗi: " + data.errors[0].message);
+            } else {
+                setStatus("Đã cập nhật sản phẩm.");
+                document.getElementById("updateId").value = "";
+                document.getElementById("newTitle").value = "";
+                document.getElementById("newPrice").value = "";
+                loadProducts();
+            }
+        }
+
+        async function deleteProduct(id) {
+            if (!confirm("Bạn có chắc muốn xóa sản phẩm này?")) return;
+            setStatus("Đang xóa...");
+            const query = `mutation { deleteProduct(id:${id}) }`;
+            const res = await fetch("/graphql", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query })
+            });
+            const data = await res.json();
+            if (data.errors) {
+                setStatus("Lỗi: " + data.errors[0].message);
+            } else {
+                setStatus("Đã xóa sản phẩm.");
+                loadProducts();
+            }
+        }
+
+        function setStatus(msg) {
+            document.getElementById("status").innerText = msg;
+        }
+
+        window.onload = loadProducts;
+    </script>
+</body>
+</html>
